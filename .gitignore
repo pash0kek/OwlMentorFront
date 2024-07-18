@@ -1,0 +1,7 @@
+.env
+bin
+include
+lib
+embeddings.csv
+flask_session
+pyvenv.cfg
