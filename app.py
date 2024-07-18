@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from flask import Flask, request, jsonify, render_template, session
 from openai import OpenAI
 from scipy import spatial
@@ -6,8 +7,8 @@ from dotenv import load_dotenv
 import pandas as pd
 import ast
 from flask_cors import CORS
-from flask_session import Session
 import logging
+import uuid
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
@@ -16,10 +17,7 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Configure server-side sessions
-app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SECRET_KEY'] = os.getenv("APP_KEY")
-Session(app)
 
 API_KEY = os.getenv("API_KEY")
 
@@ -32,6 +30,20 @@ FILE_PATH = "embeddings.csv"
 # reading the csv
 df = pd.read_csv(FILE_PATH)
 df['Embedding'] = df['Embedding'].apply(ast.literal_eval)
+
+# Database setup
+DATABASE = 'sessions.db'
+
+def get_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    with app.app_context():
+        db = get_db()
+        db.execute("CREATE TABLE IF NOT EXISTS session (sessionID TEXT PRIMARY KEY, sessionTime TIMESTAMP DEFAULT CURRENT_TIMESTAMP, info TEXT)")
+        db.commit()
 
 def user_input_embedding(query: str):
     user_embedding_response = client.embeddings.create(
@@ -60,7 +72,7 @@ def handle_response(query):
         model=LLM_MODEL,
         temperature=0.1,
         messages=[
-            {'role': 'system', 'content': 'You answer questions from students and parents at Palm Beach State College. Your answers should be short (2-3 sentances) and easy to understand. Use friendly tone of voice. Do not hallucinate! If there is a link in provided information - attach this link to the last word of the sentance before the link in HTML format like <a href="https://www.homepage.com>Visit our homepage</a>.'},
+            {'role': 'system', 'content': 'You answer questions from students and parents at Palm Beach State College. Your answers should be short (2-3 sentences) and easy to understand. Use a friendly tone of voice. Do not hallucinate! If there is a link in provided information - attach this link to the last word of the sentence before the link in HTML format like <a href="https://www.homepage.com">Visit our homepage</a>.'},
             {'role': 'user', 'content': query},
         ]
     )
@@ -69,13 +81,26 @@ def handle_response(query):
 
 @app.route('/', methods=['GET'])
 def index():
-    session['info'] = ""  # Clear the info at the start of a new session
+    session_id = str(uuid.uuid4())
+    session['session_id'] = session_id  # Store the session ID in the session
+    
+    # Insert new session record into the database
+    db = get_db()
+    db.execute("INSERT INTO session (sessionID, info) VALUES (?, ?)", (session_id, ""))
+    db.commit()
+    
     return render_template('index.html')
 
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
         user_message = request.json.get('message')
+        session_id = session.get('session_id')  # Retrieve session_id from the session
+
+        if not session_id:
+            return jsonify({"error": "Session ID not found"}), 400
+
+        db = get_db()
 
         # Perform embedding search first
         query_for_embedding = f"Answer the following question: {user_message}"
@@ -83,13 +108,23 @@ def chat():
 
         # Update session info
         new_info = strings[0]
-        session['info'] = new_info + "\n" + session.get('info', '')
+        
+        # Retrieve existing info
+        cursor = db.execute("SELECT info FROM session WHERE sessionID = ?", (session_id,))
+        row = cursor.fetchone()
+        current_info = row['info'] if row else ""
+
+        updated_info = new_info + "\n" + current_info
+
+        # Update session info in the database
+        db.execute("UPDATE session SET info = ? WHERE sessionID = ?", (updated_info, session_id))
+        db.commit()
 
         # Construct query for OpenAI API
-        query = f"""Use only below information to answer the following questions. If the answer cannot be found, write "Oops, seems like I don't know an answer to this question! Please, visit https://www.palmbeachstate.edu/"
+        query = f"""Use only the information below to answer the following question. If the answer cannot be found, write "Oops, seems like I don't know the answer to this question! Please, visit https://www.palmbeachstate.edu/"
         information:
         \"\"\"
-        {session['info']}
+        {updated_info}
         \"\"\"
         Question: {user_message}"""
 
@@ -103,4 +138,5 @@ def chat():
         return jsonify({"error": "An internal server error occurred"}), 500
 
 if __name__ == '__main__':
+    init_db()  # Initialize the database
     app.run(debug=True)
