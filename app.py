@@ -69,32 +69,23 @@ def handle_response(query):
 
 @app.route('/', methods=['GET'])
 def index():
-    # Initialize session info
+    # Initialize session info and session ID
     session['info'] = ""
+    session['session_id'] = str(uuid.uuid4())
     return render_template('index.html')
 
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
         user_message = request.json.get('message')
+        session_id = session.get('session_id')
 
-        # Perform embedding search first
         query_for_embedding = f"Answer the following question: {user_message}"
         strings, relatednesses = strings_ranked_by_relatedness(user_input_embedding(query_for_embedding), df, top_n=1)
 
-        # Initialize session info and session_id
-        if 'info' not in session:
-            session_id = str(uuid.uuid4())
-            session['info'] = ""
-        else:
-            session_id = session.get('session_id', '')
-            session['session_id'] = session_id
-
-        # Update session info
         new_info = strings[0]
         session['info'] += "\n" + new_info
 
-        # Construct query for OpenAI API
         query = f"""Use only the information below to answer the following question. If the answer cannot be found, write "Oops, seems like I don't know the answer to this question! Please, visit https://www.palmbeachstate.edu/"
         information:
         \"\"\"
@@ -102,10 +93,8 @@ def chat():
         \"\"\"
         Question: {user_message}"""
 
-        # Get response from OpenAI
         response_text = handle_response(query)
 
-        # Update session data
         message = {"response": response_text}
 
         if session_id in session_data:

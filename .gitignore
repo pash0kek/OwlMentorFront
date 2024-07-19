@@ -5,3 +5,4 @@ lib
 embeddings.csv
 flask_session
 pyvenv.cfg
+data.json
