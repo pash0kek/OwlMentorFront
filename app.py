@@ -74,6 +74,10 @@ def index():
     session['session_id'] = str(uuid.uuid4())
     return render_template('index.html')
 
+@app.route('/data')
+def data():
+    return render_template('data.json')
+
 @app.route('/chat', methods=['POST'])
 def chat():
     try:
@@ -100,14 +104,17 @@ def chat():
         if session_id in session_data:
             session_data[session_id]['user_messages'].append(user_message)
             session_data[session_id]['responses'].append(response_text)
+            session_data[session_id]['quant_user_messages'] = len(session_data[session_id]['user_messages'])
+
         else:
             session_data[session_id] = {
                 "id": session_id,
                 "time": current_time.isoformat(),
                 "user_messages": [user_message],
-                "responses": [response_text]
+                "responses": [response_text],
+                "quant_user_messages": 1
             }
-        with open("data.json", "w") as file:
+        with open("templates/data.json", "w") as file:
             json.dump(session_data, file)
         return jsonify(message)
     except Exception as e:
