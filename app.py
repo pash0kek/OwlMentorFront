@@ -15,13 +15,11 @@ app = Flask(__name__)
 CORS(app, supports_credentials=True)
 load_dotenv()
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 
 app.config['SECRET_KEY'] = os.getenv("APP_KEY")
 API_KEY = os.getenv("API_KEY")
 
-# dependencies
 client = OpenAI(api_key=API_KEY)
 EMBEDDING_MODEL = "text-embedding-3-small"
 LLM_MODEL = "gpt-3.5-turbo"
@@ -29,7 +27,6 @@ FILE_PATH = "embeddings.csv"
 current_time = datetime.datetime.now()
 session_data = {}
 
-# reading the csv
 df = pd.read_csv(FILE_PATH)
 df['Embedding'] = df['Embedding'].apply(ast.literal_eval)
 
@@ -69,7 +66,6 @@ def handle_response(query):
 
 @app.route('/', methods=['GET'])
 def index():
-    # Initialize session info and session ID
     session['info'] = ""
     session['session_id'] = str(uuid.uuid4())
     return render_template('index.html')
